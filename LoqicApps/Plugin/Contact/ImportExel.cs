@@ -1,15 +1,13 @@
 ﻿using CrmEarlyBound;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Spreadsheet;
-using LogiqApps.CustomEntity;
-using LogiqApps.Models;
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Query;
-using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+
 namespace LogiqApps.Plugin.Contact
 {
     public class ImportExcel : PluginBase
@@ -28,16 +26,7 @@ namespace LogiqApps.Plugin.Contact
         }
         private void PostOperationCreateHandler(LocalPluginContext localPluginContext)
         {
-            //var referral = localPluginContext.Target<ipg_referral>();
-            //CreateNoteOnRejectReferral(referral.Id, localPluginContext.OrganizationService);
-            //string tempFile = string.Empty;
-            //ImportProcessDto gateProcessDto = JsonConvert.DeserializeObject<ImportProcessDto>(args);
-            //var context = localPluginContext.PluginExecutionContext;
-            //var service = localPluginContext.OrganizationService;
             IPluginExecutionContext context = localPluginContext.PluginExecutionContext;
-            //IOrganizationServiceFactory factory = (IOrganizationServiceFactory)serviceProvider.GetService(typeof(IOrganizationServiceFactory));
-            //IPluginExecutionContext context = localContext.PluginExecutionContext;
-            //IOrganizationService organizationService = localContext.OrganizationService;
             IOrganizationService organizationService = localPluginContext.OrganizationService;
             if (context.InputParameters.Contains("Target") &&
                 context.InputParameters["Target"] is Entity)
@@ -51,9 +40,6 @@ namespace LogiqApps.Plugin.Contact
                     MemoryStream ms = new MemoryStream();
                     ms.Write(fileContent, 0, fileContent.Length);
                     ms.Position = 0;
-                    /*Workbook workbook = new Workbook(ms);
-                    workbook.Save(filePath + “.out.xlsx”);
-                    workbook.Save(filePath + “.out.pdf”, SaveFormat.Pdf);*/
                     var doc = SpreadsheetDocument.Open(ms, false);
                     WorkbookPart workbookPart = doc.WorkbookPart;
                     WorksheetPart worksheetPart = workbookPart.WorksheetParts.First();
@@ -62,38 +48,31 @@ namespace LogiqApps.Plugin.Contact
                     List<string> actualColumnName = new List<string>();
                     for (int i = 1; i < thisSheet.Elements<Row>().Count(); i++)
                     {
-                        var contactId = Guid.TryParse(ReadExcelCell(thisSheet.Elements<Row>().ElementAt(i).Elements<Cell>().ElementAt(4), workbookPart), out var newGuid);
+
+                        var contactId = Guid.TryParse(ReadExcelCell(thisSheet.Elements<Row>().ElementAt(i).Elements<Cell>().ElementAt(5), workbookPart), out var newGuid);
+                        var firstname = ReadExcelCell(thisSheet.Elements<Row>().ElementAt(i).Elements<Cell>().ElementAt(0), workbookPart);
+                        var lastname = ReadExcelCell(thisSheet.Elements<Row>().ElementAt(i).Elements<Cell>().ElementAt(1), workbookPart);
+                        var email = ReadExcelCell(thisSheet.Elements<Row>().ElementAt(i).Elements<Cell>().ElementAt(2), workbookPart);
+                        var phone = ReadExcelCell(thisSheet.Elements<Row>().ElementAt(i).Elements<Cell>().ElementAt(3), workbookPart);
+                        var status = ReadExcelCell(thisSheet.Elements<Row>().ElementAt(i).Elements<Cell>().ElementAt(4), workbookPart);
+                        var statusEnum = status == "Active" ? Contact_StatusCode.Active : Contact_StatusCode.Inactive;
+
                         if (contactId)
                         {
-                            for (int j = 0; j < thisSheet.Elements<Row>().ElementAt(i).Elements<Cell>().Count(); j++)
-                            {
-                                var c = thisSheet.Elements<Row>().ElementAt(0).Elements<Cell>().ElementAt(4);
-                                if (i == 0)
-                                {
-                                    string value = c.InnerText;
-                                    actualColumnName.Add(value);
-                                    if (c.DataType.Value == CellValues.SharedString)
-                                    {
-                                        /* var stringTable = workbookPart.GetPartsOfType<SharedStringTablePart>()
-                                             .FirstOrDefault();
-                                         if (stringTable != null)
-                                             value = stringTable.SharedStringTable.ElementAt(int.Parse(value)).InnerText;
-                                         columnName.Add(value);*/
-                                    }
-                                }
-                            }
                             var contact = new Entity("contact", newGuid);
                             bool isChanged = false;
-                            var actualContact = organizationService.Retrieve(contact.LogicalName, newGuid, new ColumnSet("fullname", "emailaddress1", "telephone1", "statecode"));
-                            var fullname = ReadExcelCell(thisSheet.Elements<Row>().ElementAt(i).Elements<Cell>().ElementAt(0), workbookPart);
-                            var email = ReadExcelCell(thisSheet.Elements<Row>().ElementAt(i).Elements<Cell>().ElementAt(1), workbookPart);
-                            var phone = ReadExcelCell(thisSheet.Elements<Row>().ElementAt(i).Elements<Cell>().ElementAt(2), workbookPart);
-                            //var status = ReadExcelCell(thisSheet.Elements<Row>().ElementAt(i).Elements<Cell>().ElementAt(2), workbookPart);
-                            if (fullname != (string)actualContact["fullname"])
+                            var actualContact = organizationService.Retrieve(contact.LogicalName, newGuid, new ColumnSet("firstname", "lastname", "emailaddress1", "telephone1", "statecode"));
+                            if (firstname != (string)actualContact["firstname"])
                             {
-                                contact["fullname"] = fullname;
+                                contact["firstname"] = firstname;
                                 isChanged = true;
                             }
+                            if (lastname != (string)actualContact["lastname"])
+                            {
+                                contact["lastname"] = lastname;
+                                isChanged = true;
+                            }
+
                             if (email != (string)actualContact["emailaddress1"])
                             {
                                 contact["emailaddress1"] = email;
@@ -104,19 +83,34 @@ namespace LogiqApps.Plugin.Contact
                                 contact["telephone1"] = phone;
                                 isChanged = true;
                             }
+
+                            if (statusEnum.ToString() != status)
+                            {
+                                contact["statecode"] = status == "Active" ? Contact_StatusCode.Active : Contact_StatusCode.Inactive;
+                                isChanged = true;
+                            }
+
                             if (isChanged)
                                 organizationService.Update(contact);
                         }
                         else
                         {
-                            //add to responce
+
+                            var createdcontact = new Entity("contact", newGuid);
+                            createdcontact["firstname"] = firstname;
+                            createdcontact["lastname"]=lastname;
+                            createdcontact["emailaddress1"]=email;
+                            createdcontact["telephone1"] = email;
+                            
+                            organizationService.Create(createdcontact);
+
                         }
                         var contacta = new Entity("contact", newGuid);
                         var afterContact = organizationService.Retrieve(contacta.LogicalName, newGuid, new ColumnSet("fullname", "emailaddress1", "telephone1", "statecode"));
                     }
                 }
             }
-            //return JsonConvert.SerializeObject(gateProcessDto).ToCustomEntityCollection();
+
         }
         private string ReadExcelCell(Cell cell, WorkbookPart workbookPart)
         {
@@ -130,18 +124,15 @@ namespace LogiqApps.Plugin.Contact
             }
             return (text ?? string.Empty).Trim();
         }
-        private void ValidateRecords(Guid referralId, IOrganizationService service)
+
+        public enum Contact_StatusCode
         {
-        }
-        private bool isExist(Guid referralId, IOrganizationService service)
-        {
-            return true;
-        }
-        private void UpdateRecord(Guid referralId, IOrganizationService service)
-        {
-        }
-        private void ParseExel(Guid referralId, IOrganizationService service)
-        {
+
+            [System.Runtime.Serialization.EnumMemberAttribute()]
+            Active = 1,
+
+            [System.Runtime.Serialization.EnumMemberAttribute()]
+            Inactive = 2,
         }
     }
 }
